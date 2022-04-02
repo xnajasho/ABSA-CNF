@@ -128,8 +128,6 @@ class CNFModel:
             lst.append(token_ner_info)
         return lst
 
-
-
     def get_label(self, sentence):
         return [label for (token, pos, label) in sentence]
 
@@ -193,6 +191,48 @@ class CNFModel:
         predictions = np.array([labels[tag] for row in y_pred for tag in row])
         truths = np.array([labels[tag] for row in y_test for tag in row])
         print(classification_report(truths, predictions, target_names=['B', 'I', 'O']))
+
+
+        new_y_test = list(map(lambda x: list(map(self.change_BIO, x)), y_test))
+        new_y_pred = list(map(lambda x: list(map(self.change_BIO, x)), y_pred))
+
+        print(self.get_metrics(new_y_test, new_y_pred, b=1))
+
+    def change_BIO(self, label):
+        if label == 'O':
+            return 0
+        elif label == 'B':
+            return 1
+        else:
+            return 2
+
+    def get_term_pos(self, labels):
+        start, end = 0, 0
+        tag_on = False
+        terms = []
+        labels = np.append(labels, [0])
+        for i, label in enumerate(labels):
+            if label == 1 and not tag_on:
+                tag_on = True
+                start = i
+            if tag_on and labels[i + 1] != 2:
+                tag_on = False
+                end = i
+                terms.append((start, end))
+        return terms
+
+    def get_metrics(self, test_y, pred_y, b=1):
+        common, relevant, retrieved = 0., 0., 0.
+        for i in range(len(test_y)):
+            cor = self.get_term_pos(test_y[i])
+            pre = self.get_term_pos(pred_y[i])
+            common += len([a for a in pre if a in cor])
+            retrieved += len(pre)
+            relevant += len(cor)
+        p = common / retrieved if retrieved > 0 else 0.
+        r = common / relevant
+        f1 = (1 + (b ** 2)) * p * r / ((p * b ** 2) + r) if p > 0 and r > 0 else 0.
+        return p, r, f1, common, retrieved, relevant
 
 
 if __name__ == "__main__":

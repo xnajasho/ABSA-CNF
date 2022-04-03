@@ -190,14 +190,18 @@ class CNFModel:
 
         predictions = np.array([labels[tag] for row in y_pred for tag in row])
         truths = np.array([labels[tag] for row in y_test for tag in row])
-        print(classification_report(truths, predictions, target_names=['B', 'I', 'O']))
+        print(classification_report(truths, predictions, target_names=['B', 'I', 'O'])) # printing classification report
 
 
         new_y_test = list(map(lambda x: list(map(self.change_BIO, x)), y_test))
         new_y_pred = list(map(lambda x: list(map(self.change_BIO, x)), y_pred))
 
-        print(self.get_metrics(new_y_test, new_y_pred, b=1))
+        print(self.get_metrics(new_y_test, new_y_pred, b=1)) ## printing new metric to calculate F1
 
+
+    '''
+        Helper Function to Change Bio label to numerical values. "O" = 0, "B" = 1, "I" = 2
+    '''
     def change_BIO(self, label):
         if label == 'O':
             return 0
@@ -206,6 +210,9 @@ class CNFModel:
         else:
             return 2
 
+    '''
+        Helper Function for get_metrics() to calculate new F1 metric measure
+    '''
     def get_term_pos(self, labels):
         start, end = 0, 0
         tag_on = False
@@ -221,6 +228,10 @@ class CNFModel:
                 terms.append((start, end))
         return terms
 
+
+    '''
+        Function to calculate new metric to evaluate our model instead of classification report.
+    '''
     def get_metrics(self, test_y, pred_y, b=1):
         common, relevant, retrieved = 0., 0., 0.
         for i in range(len(test_y)):

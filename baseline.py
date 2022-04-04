@@ -21,9 +21,11 @@ class CNFBaselineModel:
         self.train_data = self.preprocessed.train_data
         self.test_data =  self.preprocessed.test_data
 
-    def word2features(self, sentence, i):
+    def word2features(self, sentence, i, sentence_index):
         current_word = sentence[i][0]
         current_pos = sentence[i][1]
+
+        print(sentence)
 
         # Features relevant to the CURRENT token in sentence
         features = [
@@ -70,14 +72,14 @@ class CNFBaselineModel:
 
         return features
 
-    def extract_features(self, sentence):
-        return [self.word2features(sentence, i) for i in range(len(sentence))]
+    def extract_features(self, sentence, sentence_index):
+        return [self.word2features(sentence, i, sentence_index) for i in range(len(sentence))]
 
     def get_label(self, sentence):
         return [label for (token, pos, label) in sentence]
 
     def train_model(self):
-        X_train = [self.extract_features(sentence) for sentence in self.train_data]
+        X_train = [self.extract_features(self.train_data[i], i) for i in range(len(self.train_data))]
         y_train = [self.get_label(sentence) for sentence in self.train_data]
 
         trainer = pycrfsuite.Trainer(verbose=False)
@@ -102,7 +104,7 @@ class CNFBaselineModel:
         print("Finished training model")
 
     def predict(self):
-        X_test = [self.extract_features(sentence) for sentence in self.test_data]
+        X_test = [self.extract_features(self.test_data[i], i) for i in range(len(self.test_data))]
         y_test = [self.get_label(sentence) for sentence in self.test_data]
 
         tagger = pycrfsuite.Tagger()

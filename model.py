@@ -1,9 +1,14 @@
+import string
+
 from preprocessor import Preprocessor
 
 import pycrfsuite
 import nltk
 import numpy as np
 import spacy
+import time
+import copy
+import stanza
 
 from nltk.stem import WordNetLemmatizer
 from nltk.stem import PorterStemmer
@@ -22,6 +27,7 @@ LAPTOP_TEST_DIRECTORY = "data/test_data/Laptops_Test_Truth.xml"
 # nltk.download('wordnet')
 # nltk.download('omw-1.4')
 # nltk.download('vader_lexicon')
+#stanza.download('en')
 class CNFModel:
 
     def __init__(self, train_directory=RESTAURANT_TRAIN_DIRECTORY, test_directory=RESTAURANT_TEST_DIRECTORY):
@@ -29,23 +35,45 @@ class CNFModel:
         self.train_data = self.preprocessed.train_data
         self.test_data =  self.preprocessed.test_data
 
+        self.test_full_sentence = self.preprocessed.test_full_sentence
+        self.train_full_sentence = self.preprocessed.train_full_sentence
 
-    # sentence = [(w1, pos, bio_label),(w2, pos, bio_label),...,(wn, pos, bio_label)]
-    def extract_features(self, sentence):
+
+    # sentence = [(w1, pos, bio_label), (w2, pos, bio_label),..., (wn, pos, bio_label)]
+    def extract_features(self, sentence, index, corpus_used):
+
+        if corpus_used == "Test":
+            original_sentence = self.test_full_sentence[index]
+        else:
+            original_sentence = self.train_full_sentence[index]
 
         #nlp = spacy.load("en_core_web_sm")
-        #list_tokens_NER = self.get_tokens_NER(sentence, parser=nlp)
+        nlp = stanza.Pipeline('en', processors='tokenize,mwt,pos,lemma,depparse')
+        #list_tokens_NER = self.get_tokens_NER(original_sentence, parser=nlp)
+
+        list_tokens_dependency = self.get_tokens_dependency(original_sentence,
+                                                            pos_sentence=copy.deepcopy(sentence), parser=nlp)
+        #list_tokens_ner_dep = self.get_tokens_NER_DEP(original_sentence, parser=nlp)
+
 
         sentiment_analyzer = SentimentIntensityAnalyzer()
 
         all_features = []
 
+        print("Joined POS sentence = " + ' '.join([tup[0] for tup in sentence]))
+        print("Original Sentence = " + original_sentence)
+        print(list_tokens_dependency)
+
         for i in range(len(sentence)):
             current_word = sentence[i][0]
             current_pos = sentence[i][1]
             #current_word_ner = list_tokens_NER[i]
-            polarity_score = sentiment_analyzer.polarity_scores(current_word)
+            current_word_dep = list_tokens_dependency[i]
 
+            if current_word != current_word_dep[0]:
+                print((current_word, current_word_dep[0]))
+
+            polarity_score = sentiment_analyzer.polarity_scores(current_word)
 
             lemmatizer = WordNetLemmatizer()
             stemmer = PorterStemmer()
@@ -64,7 +92,12 @@ class CNFModel:
                 'word.isStopword=%s' % self.isStopword(current_word),
                 'word.positivityscore=%s' % polarity_score['pos'],
                 'word.negativityscore=%s' % polarity_score['neg'],
-                #'word.nerlabel=' + current_word_ner,
+                #'word.nerlabel=' + current_word_ner_dep[1],
+                #'word.deplabel=' + current_word_ner_dep[2],
+                'word.is_iobj=' + ('1' if current_word_dep[1] == 'iobj' else '0'),
+                'word.is_dobj=' + ('1' if current_word_dep[1] == 'dobj' else '0'),
+                'word.is_nsubj=' + ('1' if current_word_dep[1] == 'nsubj' else '0'),
+                #'word.is_hyp=' + ('1' if current_word_dep[1] == 'hyp' else '0'),
                 'pos.isSuperlative=%s' % self.isSuperlative(current_pos),
                 'pos.isComparative=%s' % self.isComparative(current_pos),
                 'postag=' + current_pos,
@@ -103,12 +136,70 @@ class CNFModel:
 
             all_features.append(features)
 
-
+        print("------------------------------------------------------------------------------------------------------")
         return all_features
 
-    def get_tokens_NER(self, sentence, parser):
-        word_tokens = [tup[0] for tup in sentence]
-        full_sentence = " ".join(word_tokens)
+    '''
+        Helper function to get the generate individual token dependencies in a sentence
+        Input sentence: A full english text sentence (not tokenized) 
+                        e.g "Autonomous cars shift insurance liability toward manufacturers"
+        Output: [(Autonomous, amod), (cars, nsubj), (shift, ROOT), (insurance, compound), (liability, dobj), 
+                 (toward, prep), (manufacturers, pobj)]
+    '''
+    def get_tokens_dependency(self, full_sentence, pos_sentence, parser):
+        doc = parser(full_sentence)
+        output = []
+
+        for sentences in doc.to_dict():
+
+            joined_hyphenated_word = ""
+
+            for token_info in sentences:
+                dep_generated_token = token_info['text']
+                dep_generated_dep = token_info['deprel']
+
+                if dep_generated_token not in string.punctuation:
+
+                    if (dep_generated_token == pos_sentence[0][0]):
+                        output.append((dep_generated_token, dep_generated_dep))
+                        pos_sentence.pop(0)
+                        continue
+
+                    hyphenated_word = pos_sentence[0][0]
+                    joined_hyphenated_word += dep_generated_token
+                    if hyphenated_word[len(hyphenated_word) - len(dep_generated_token):len(hyphenated_word)] == dep_generated_token:
+                        output.append((joined_hyphenated_word, "hyp"))
+                        pos_sentence.pop(0)
+                        joined_hyphenated_word = ""
+        return output
+
+        # joined_hyphenated_word = ""
+        # output = []
+        #
+        # for i in range(len(doc)):
+        #     dep_generated_token = doc[i].text
+        #
+        #     if dep_generated_token not in string.punctuation:
+        #         if (dep_generated_token == pos_sentence[0][0]):
+        #             output.append((dep_generated_token, doc[i].dep_))
+        #             pos_sentence.pop(0)
+        #             continue
+        #
+        #         hyphenated_word = pos_sentence[0][0]
+        #         joined_hyphenated_word += dep_generated_token
+        #         if hyphenated_word[len(hyphenated_word) - len(dep_generated_token):len(hyphenated_word)] == dep_generated_token:
+        #             output.append((joined_hyphenated_word, "hyp"))
+        #             pos_sentence.pop(0)
+        #             joined_hyphenated_word = ""
+
+        return output
+
+    '''
+        Helper function to get the named entity recognition for a sentence
+        Input sentence: A full english text sentence (not tokenized) e.g "San Francisco"
+        Output: [('San', 'B-GPE'), ('Francisco', 'I-GPE')]
+    '''
+    def get_tokens_NER(self, full_sentence, parser):
         doc = parser(full_sentence)
 
         lst = []
@@ -126,6 +217,32 @@ class CNFModel:
                 token_ner_info = (doc[i].text, token_NER_IOB + "-" + doc[i].ent_type_)  # e.g ('San', 'B-GPE'), ('Francisco', 'I-GPE')
 
             lst.append(token_ner_info)
+        return lst
+
+    '''
+        Ignore this function for the time being
+    '''
+    def get_tokens_NER_DEP(self, full_sentence, parser):
+        doc = parser(full_sentence)
+
+        lst = []
+
+        dep_list = ['dobj', 'xobj', 'iobj']
+
+        for i in range(len(doc)):
+            if doc[i].text not in string.punctuation:
+                token_NER_IOB = doc[i].ent_iob_
+                token_dep = doc[i].dep_
+                # if token_dep not in dep_list:
+                #     token_dep = "NULL"
+
+                if token_NER_IOB == 'O':
+                    token_ner_dep_info = (doc[i].text, token_NER_IOB, token_dep)
+
+                else:
+                    token_ner_dep_info = (doc[i].text, token_NER_IOB + "-" + doc[i].ent_type_, token_dep)
+
+                lst.append(token_ner_dep_info)
         return lst
 
     def get_label(self, sentence):
@@ -150,7 +267,7 @@ class CNFModel:
 
     def train_model(self):
         print("Training Model...")
-        X_train = [self.extract_features(sentence) for sentence in self.train_data]
+        X_train = [self.extract_features(self.train_data[i], i, corpus_used="Train") for i in range(len(self.train_data))]
         y_train = [self.get_label(sentence) for sentence in self.train_data]
 
         print('Generated Training Features + Labels...')
@@ -177,7 +294,7 @@ class CNFModel:
 
     def predict(self):
         print("Predicting Model...")
-        X_test = [self.extract_features(sentence) for sentence in self.test_data]
+        X_test = [self.extract_features(self.test_data[i], i, corpus_used="Test") for i in range(len(self.test_data))]
         y_test = [self.get_label(sentence) for sentence in self.test_data]
 
         tagger = pycrfsuite.Tagger()
@@ -248,5 +365,7 @@ class CNFModel:
 
 if __name__ == "__main__":
     model = CNFModel()
+    start_time = time.clock()
     model.train_model()
     model.predict()
+    print("Time Taken = ", time.clock() - start_time)

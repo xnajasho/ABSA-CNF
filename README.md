@@ -1,4 +1,4 @@
-# ABSA-CNF
+# ABSA-CRF
 
 
 Our main model is under model.py. Baseline model is under baseline.py
